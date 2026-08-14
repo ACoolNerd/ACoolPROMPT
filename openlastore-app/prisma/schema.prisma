@@ -1,0 +1,240 @@
+// OpenLAStore + ACoolCOLLECTOR prototype data model.
+// Field names intentionally line up with common Square/QuickBooks CSV import
+// columns (customer name/email, item name, qty, unit price, total, date) so
+// the export routes can produce compatible files without extra mapping.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum UserRole {
+  MEMBER
+  PROFESSIONAL
+  ADMIN
+}
+
+enum RsvpStatus {
+  GOING
+  INTERESTED
+  CANCELLED
+}
+
+enum ProductCategory {
+  DRINK
+  ITEM
+  PACK
+}
+
+enum Brand {
+  OPENLASTORE
+  ACOOLCOLLECTOR
+}
+
+enum CardTier {
+  GUARANTEED_HIT
+  STAR
+  ROOKIE
+  INSERT_PARALLEL
+  WILD
+  GOLDEN
+}
+
+enum AcquiredVia {
+  PACK_OPEN
+  CARD_REGISTRATION
+  POINTS_REDEMPTION
+  PROMO_GIVEAWAY
+}
+
+enum LedgerReason {
+  PURCHASE
+  PACK_OPEN_COST
+  POINTS_REDEMPTION
+  SUBSCRIPTION_BONUS
+  EVENT_HOST_BONUS
+  CARD_REGISTRATION_BONUS
+  ADMIN_ADJUSTMENT
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  role      UserRole @default(MEMBER)
+  createdAt DateTime @default(now())
+
+  hostedEvents  Event[]
+  rsvps         EventRsvp[]
+  orders        Order[]
+  ledgerEntries PointsLedgerEntry[]
+  punchCard     PunchCard?
+  subscription  Subscription?
+  cards         CardInstance[]
+  packOpenings  MysteryPackOpening[]
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  hostId      String
+  host        User     @relation(fields: [hostId], references: [id])
+  title       String
+  description String
+  category    String
+  location    String
+  isIntimate  Boolean  @default(true)
+  capacity    Int      @default(20)
+  startsAt    DateTime
+  createdAt   DateTime @default(now())
+
+  rsvps EventRsvp[]
+}
+
+model EventRsvp {
+  id        String     @id @default(cuid())
+  eventId   String
+  event     Event      @relation(fields: [eventId], references: [id])
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  status    RsvpStatus @default(GOING)
+  createdAt DateTime   @default(now())
+
+  @@unique([eventId, userId])
+}
+
+model Product {
+  id          String          @id @default(cuid())
+  sku         String          @unique
+  name        String
+  category    ProductCategory
+  brand       Brand           @default(OPENLASTORE)
+  priceCents  Int
+  description String
+  imageEmoji  String          @default("✨")
+  active      Boolean         @default(true)
+  mysteryPack MysteryPack?
+
+  orderItems OrderItem[]
+}
+
+model MysteryPack {
+  id         String               @id @default(cuid())
+  productId  String               @unique
+  product    Product              @relation(fields: [productId], references: [id])
+  series     String
+  slotTiers  String
+  pointsCost Int                  @default(0)
+  openings   MysteryPackOpening[]
+}
+
+model CardTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  tier        CardTier
+  brand       Brand
+  series      String
+  imageEmoji  String
+  description String
+  totalSupply Int?
+  createdAt   DateTime @default(now())
+
+  instances CardInstance[]
+}
+
+model CardInstance {
+  id           String       @id @default(cuid())
+  templateId   String
+  template     CardTemplate @relation(fields: [templateId], references: [id])
+  serialNumber Int?
+  redeemCode   String?      @unique
+  ownerId      String?
+  owner        User?        @relation(fields: [ownerId], references: [id])
+  acquiredVia  AcquiredVia?
+  acquiredAt   DateTime?
+  createdAt    DateTime     @default(now())
+}
+
+model PunchCard {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id])
+  punches      Int      @default(0)
+  freeRedeemed Int      @default(0)
+  updatedAt    DateTime @updatedAt
+}
+
+model PointsLedgerEntry {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id])
+  delta     Int
+  reason    LedgerReason
+  note      String
+  orderId   String?
+  createdAt DateTime     @default(now())
+}
+
+model Subscription {
+  id                String             @id @default(cuid())
+  userId            String             @unique
+  user              User               @relation(fields: [userId], references: [id])
+  plan              String             @default("JUICE_CLUB_MONTHLY")
+  status            SubscriptionStatus @default(ACTIVE)
+  priceCents        Int                @default(1999)
+  pointsMultiplier  Float              @default(1.5)
+  monthlyPackCredit Int                @default(1)
+  creditsRemaining  Int                @default(1)
+  startedAt         DateTime           @default(now())
+  currentPeriodEnd  DateTime
+  cancelledAt       DateTime?
+}
+
+model Order {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id])
+  channel          String   @default("WEB")
+  paymentMethod    String   @default("SIMULATED_CARD")
+  squareLocationId String   @default("LOC-OPENLASTORE-DTLA")
+  subtotalCents    Int
+  taxCents         Int
+  totalCents       Int
+  createdAt        DateTime @default(now())
+
+  items        OrderItem[]
+  packOpenings MysteryPackOpening[]
+}
+
+model OrderItem {
+  id             String  @id @default(cuid())
+  orderId        String
+  order          Order   @relation(fields: [orderId], references: [id])
+  productId      String
+  product        Product @relation(fields: [productId], references: [id])
+  name           String
+  category       String
+  quantity       Int
+  unitPriceCents Int
+  totalCents     Int
+}
+
+model MysteryPackOpening {
+  id              String      @id @default(cuid())
+  userId          String
+  user            User        @relation(fields: [userId], references: [id])
+  mysteryPackId   String
+  mysteryPack     MysteryPack @relation(fields: [mysteryPackId], references: [id])
+  orderId         String?
+  order           Order?      @relation(fields: [orderId], references: [id])
+  cardInstanceIds String
+  openedAt        DateTime    @default(now())
+}
